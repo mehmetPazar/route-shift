@@ -1,0 +1,358 @@
+/* ============================================================
+   RouteShift — Dark Theme
+   ============================================================ */
+
+:root {
+  --bg: #0f0f1a;
+  --surface: #1a1a2e;
+  --border: #2a2a4a;
+  --primary: #00e676;
+  --danger: #ff5252;
+  --info: #448aff;
+  --warn: #ffc107;
+  --text: #e0e0e0;
+  --muted: #6a6a8a;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+/* ==================== HEADER ==================== */
+
+.header {
+  background: var(--surface);
+  border-bottom: 2px solid var(--danger);
+  padding: 16px 24px;
+  transition: border-color 0.3s;
+}
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #fff;
+}
+.header.active {
+  border-bottom-color: var(--primary);
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #555;
+  flex-shrink: 0;
+  transition: all 0.3s;
+}
+.dot.active {
+  background: var(--primary);
+  box-shadow: 0 0 10px rgba(0, 230, 118, 0.4);
+}
+.dot.inactive {
+  background: var(--danger);
+}
+.dot.loading {
+  background: var(--warn);
+  animation: pulse 1s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ==================== BUTTONS ==================== */
+
+.buttons {
+  display: flex;
+  gap: 10px;
+  padding: 14px 24px;
+  background: var(--bg);
+}
+
+.btn {
+  flex: 1;
+  padding: 12px 0;
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+}
+.btn:active {
+  transform: translateY(0);
+}
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+  filter: none;
+}
+.btn-on {
+  background: var(--primary);
+  color: #0f0f1a;
+}
+.btn-off {
+  background: var(--danger);
+  color: #fff;
+}
+.btn-test {
+  background: var(--info);
+  color: #fff;
+  flex: 0.6;
+}
+
+/* ==================== TABS ==================== */
+
+.tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 24px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.2s;
+}
+.tab:hover {
+  color: var(--text);
+}
+.tab.active {
+  color: var(--info);
+  border-bottom-color: var(--info);
+}
+
+/* ==================== TAB CONTENT ==================== */
+
+.tab-content {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px 24px 16px;
+  background: var(--bg);
+}
+.tab-content.active {
+  display: flex;
+}
+
+/* ==================== LOG PANELI ==================== */
+
+.log-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+.log-clear {
+  font-size: 11px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+.log-clear:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+#log {
+  background: #0a0a14;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: scroll;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 11.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+#log::-webkit-scrollbar { width: 6px; }
+#log::-webkit-scrollbar-track { background: transparent; }
+#log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+#log::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* Log renk siniflari */
+.success { color: var(--primary); }
+.error   { color: var(--danger); }
+.info    { color: var(--info); }
+.warn    { color: var(--warn); }
+.muted   { color: var(--muted); }
+
+/* ==================== DOMAIN LISTESI ==================== */
+
+.domain-add {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.domain-add input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.domain-add input:focus {
+  border-color: var(--info);
+}
+.domain-add input::placeholder {
+  color: var(--muted);
+  opacity: 0.5;
+}
+.btn-add {
+  background: var(--info);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-add:hover {
+  filter: brightness(1.15);
+}
+
+.domain-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  overflow-y: scroll;
+  padding: 4px 2px 4px 0;
+}
+.domain-list::-webkit-scrollbar { width: 6px; }
+.domain-list::-webkit-scrollbar-track { background: transparent; }
+.domain-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.domain-list::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+.domain-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+.domain-item:hover {
+  border-color: var(--muted);
+}
+.domain-item.custom {
+  border-left: 3px solid var(--info);
+}
+.domain-item.disabled {
+  opacity: 0.4;
+}
+.domain-item .domain-index {
+  font-size: 10px;
+  color: var(--muted);
+  min-width: 18px;
+  text-align: right;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+}
+.domain-item .domain-name {
+  flex: 1;
+  font-size: 12px;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  color: var(--text);
+}
+.domain-item.disabled .domain-name {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.domain-item .domain-actions {
+  display: flex;
+  gap: 4px;
+}
+.domain-item .domain-toggle,
+.domain-item .domain-remove {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  font-family: inherit;
+  opacity: 0.5;
+  transition: all 0.2s;
+  border-radius: 3px;
+}
+.domain-item .domain-toggle:hover {
+  color: var(--warn);
+  opacity: 1;
+  background: rgba(255, 193, 7, 0.1);
+}
+.domain-item .domain-remove:hover {
+  color: var(--danger);
+  opacity: 1;
+  background: rgba(255, 82, 82, 0.1);
+}
+
+/* ==================== FOOTER ==================== */
+
+.footer {
+  padding: 10px 24px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  color: #333;
+  text-align: center;
+}

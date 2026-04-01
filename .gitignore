@@ -1,0 +1,31 @@
+# Rust / Cargo build output
+src-tauri/target/
+
+# Cargo lock
+src-tauri/Cargo.lock
+
+# Tauri auto-generated schemas
+src-tauri/gen/
+
+# Node
+node_modules/
+package-lock.json
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+._*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude Code
+.claude/
+
+# Logs
+*.log

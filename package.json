@@ -1,0 +1,10 @@
+{
+  "name": "routeshift",
+  "version": "2.0.0",
+  "description": "RouteShift",
+  "scripts": {
+    "tauri": "cargo tauri",
+    "tauri:dev": "cargo tauri dev",
+    "tauri:build": "cargo tauri build"
+  }
+}
