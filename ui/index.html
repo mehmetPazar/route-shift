@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';">
+  <title>RouteShift</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header" id="header">
+    <div class="header-row">
+      <div class="header-left">
+        <svg class="header-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+        <span class="header-title">RouteShift</span>
+      </div>
+      <div class="header-status" id="headerStatus">
+        <div id="dot" class="dot inactive"></div>
+        <span id="statusLabel">Devre Dışı</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Control Buttons -->
+  <div class="buttons">
+    <button id="btnOn" class="btn btn-on" title="Bypass aç">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      Aç
+    </button>
+    <button id="btnOff" class="btn btn-off" disabled title="Bypass kapat">
+      <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+      Kapat
+    </button>
+    <button id="btnTest" class="btn btn-test" title="Bağlantı testi">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      Test
+    </button>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tabs">
+    <button class="tab active" data-tab="log">İşlem Kaydı</button>
+    <button class="tab" data-tab="domains">Domains</button>
+  </div>
+
+  <!-- Tab: Log -->
+  <div class="tab-content active" id="tab-log">
+    <div class="log-header">
+      <div class="log-header-left">
+        <span class="log-title">Log</span>
+        <span class="log-count" id="logCount">0</span>
+      </div>
+      <button id="btnClear" class="log-clear" title="Temizle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+      </button>
+    </div>
+    <div id="log"></div>
+  </div>
+
+  <!-- Tab: Domains -->
+  <div class="tab-content" id="tab-domains">
+    <div class="domain-add">
+      <input type="text" id="domainInput" placeholder="ornek.com" spellcheck="false">
+      <button id="btnAddDomain" class="btn-add">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        Ekle
+      </button>
+    </div>
+    <div id="domainList" class="domain-list"></div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    RouteShift v2.0
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -109,8 +109,12 @@ impl PlatformNetwork {
 
         on_log("    Route komutları çalıştırılıyor...");
 
-        // Tüm komutları & ile birleştir (cmd.exe paralel)
-        let batch = commands.join(" & ");
+        // Her komutu error-tolerant yap — tek komut hatası batch'i durdurmasın
+        let safe_commands: Vec<String> = commands
+            .iter()
+            .map(|cmd| format!("({} || ver >nul)", cmd))
+            .collect();
+        let batch = safe_commands.join(" & ");
         let output = Command::new("cmd")
             .args(["/C", &batch])
             .creation_flags(CREATE_NO_WINDOW)
@@ -163,7 +167,6 @@ impl NetworkOps for PlatformNetwork {
 
         on_log(&format!("    Wi-Fi   : {} (IF {})", iface_name, iface_id));
 
-        let mut wifi_ip = None;
         let mut gateway = None;
         let mut in_wifi_section = false;
 
@@ -176,11 +179,6 @@ impl NetworkOps for PlatformNetwork {
             }
 
             if in_wifi_section {
-                if trimmed.starts_with("IP Address:") || trimmed.starts_with("IP") && trimmed.contains("Address") {
-                    if let Some(ip) = trimmed.split_whitespace().last() {
-                        wifi_ip = Some(ip.to_string());
-                    }
-                }
                 if trimmed.starts_with("Default Gateway:") || trimmed.contains("Gateway") {
                     if let Some(gw) = trimmed.split_whitespace().last() {
                         if gw.contains('.') {
@@ -188,50 +186,19 @@ impl NetworkOps for PlatformNetwork {
                         }
                     }
                 }
-                // Yeni section başlıyorsa çık
-                if trimmed.is_empty() && wifi_ip.is_some() {
+                if trimmed.is_empty() && gateway.is_some() {
                     break;
                 }
             }
         }
 
-        let wifi_ip = wifi_ip.ok_or("Wi-Fi IP adresi bulunamadı")?;
-        let gateway = gateway.unwrap_or_else(|| {
-            // Fallback: IP'den tahmin
-            let parts: Vec<&str> = wifi_ip.split('.').collect();
-            if parts.len() == 4 {
-                format!("{}.{}.{}.1", parts[0], parts[1], parts[2])
-            } else {
-                "192.168.1.1".to_string()
-            }
-        });
-
-        on_log(&format!("    IP      : {}", wifi_ip));
+        let gateway = gateway.unwrap_or_else(|| "192.168.1.1".to_string());
         on_log(&format!("    Gateway : {}", gateway));
 
-        // VPN IP tespiti
-        let mut vpn_ip = None;
-        for line in route_output.lines() {
-            if line.contains("0.0.0.0") && line.contains("On-link") {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                for part in &parts {
-                    if part.starts_with("10.") && part.contains('.') {
-                        vpn_ip = Some(part.to_string());
-                        break;
-                    }
-                }
-            }
-        }
-
-        if let Some(ref vip) = vpn_ip {
-            on_log(&format!("    VPN     : {}", vip));
-        }
-
         Ok(NetworkConfig {
-            wifi_ip,
-            vpn_ip,
             gateway,
-            interface_name: iface_id.to_string(), // Windows'ta IF ID kullan
+            interface_name: iface_id.to_string(),
+            service_name: "Wi-Fi".to_string(),
         })
     }
 

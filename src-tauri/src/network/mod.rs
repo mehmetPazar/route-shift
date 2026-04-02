@@ -17,10 +17,9 @@ pub use linux::PlatformNetwork;
 /// Ağ yapılandırma bilgileri
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkConfig {
-    pub wifi_ip: String,
-    pub vpn_ip: Option<String>,
     pub gateway: String,
     pub interface_name: String,
+    pub service_name: String,
 }
 
 /// DNS sunucuları (Wi-Fi üzerinden yönlendirilecek)

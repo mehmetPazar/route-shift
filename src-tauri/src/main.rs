@@ -17,16 +17,26 @@ use tauri::{
 use tokio::task::spawn_blocking;
 
 /// Platform-spesifik route komut stringleri oluştur
+#[allow(unused_variables)]
 fn build_add_route_commands(subnets: &[String], dns_servers: &[&str], gateway: &str, iface: &str) -> Vec<String> {
     let mut commands = Vec::new();
 
     #[cfg(target_os = "macos")]
     {
+        // Gateway Wi-Fi subnet'inde → kernel connected route üzerinden en0'a yönlendirir.
+        // /32 ve /24 route'lar VPN'in /1 route'larından daha spesifik → global table'da öncelik alır.
+        // NOT: -interface veya -ifscope KULLANMA — route'u IFSCOPE yapar, VPN aktifken global trafiğe uygulanmaz.
         for dns_ip in dns_servers {
-            commands.push(format!("route -n delete -host {} 2>/dev/null ; route -n add -host {} {}", dns_ip, dns_ip, gateway));
+            commands.push(format!(
+                "route -n delete -host {} 2>/dev/null ; route -n add -host {} {}",
+                dns_ip, dns_ip, gateway
+            ));
         }
         for subnet in subnets {
-            commands.push(format!("route -n delete -net {}/24 2>/dev/null ; route -n add -net {}/24 {}", subnet, subnet, gateway));
+            commands.push(format!(
+                "route -n delete -net {}/24 2>/dev/null ; route -n add -net {}/24 {}",
+                subnet, subnet, gateway
+            ));
         }
     }
 
@@ -53,16 +63,24 @@ fn build_add_route_commands(subnets: &[String], dns_servers: &[&str], gateway: &
     commands
 }
 
-fn build_remove_route_commands(subnets: &[String], dns_servers: &[&str]) -> Vec<String> {
+#[allow(unused_variables)]
+fn build_remove_route_commands(subnets: &[String], dns_servers: &[&str], iface: &str) -> Vec<String> {
     let mut commands = Vec::new();
 
     #[cfg(target_os = "macos")]
     {
+        // Hem unscoped hem scoped (-ifscope) route'ları sil
         for dns_ip in dns_servers {
-            commands.push(format!("route -n delete -host {} 2>/dev/null", dns_ip));
+            commands.push(format!(
+                "route -n delete -host {} 2>/dev/null ; route -n delete -ifscope {} -host {} 2>/dev/null",
+                dns_ip, iface, dns_ip
+            ));
         }
         for subnet in subnets {
-            commands.push(format!("route -n delete -net {}/24 2>/dev/null", subnet));
+            commands.push(format!(
+                "route -n delete -net {}/24 2>/dev/null ; route -n delete -ifscope {} -net {}/24 2>/dev/null",
+                subnet, iface, subnet
+            ));
         }
     }
 
@@ -154,6 +172,20 @@ fn get_domains() -> Vec<DomainInfo> {
 #[tauri::command]
 fn save_domains(data: DomainsConfig) -> Result<(), String> {
     domains::save_domains_config(&data)
+}
+
+#[tauri::command]
+async fn ensure_admin() -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        spawn_blocking(|| PlatformNetwork::ensure_admin())
+            .await
+            .map_err(|e| format!("Thread hatası: {}", e))?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(true)
+    }
 }
 
 #[tauri::command]
@@ -259,16 +291,24 @@ async fn bypass_run(mode: String, app: AppHandle, state: State<'_, AppState>) ->
 
         let logger = make_logger();
         let l = logger.clone();
+        let svc_rm = config.service_name.clone();
+        let iface_rm = config.interface_name.clone();
         let subnets = dns_result.subnets.clone();
         spawn_blocking(move || {
             let cb = log_cb!(l);
-            let commands = build_remove_route_commands(&subnets, DNS_SERVERS);
+            let commands = build_remove_route_commands(&subnets, DNS_SERVERS, &iface_rm);
             match PlatformNetwork::exec_routes_elevated(&commands, &cb) {
                 Ok(()) => {
                     for dns_ip in DNS_SERVERS { cb(&format!("    [-] DNS  {} ✓", dns_ip)); }
                     for subnet in &subnets { cb(&format!("    [-] {}/24 ✓", subnet)); }
                 }
                 Err(e) => cb(&format!("    HATA: Route'lar silinemedi: {}", e)),
+            }
+            // macOS: networksetup route'larını + PF kurallarını kaldır
+            #[cfg(target_os = "macos")]
+            {
+                PlatformNetwork::clear_routes_networksetup(&svc_rm, &cb);
+                PlatformNetwork::remove_pf_bypass(&cb);
             }
         }).await.unwrap_or(());
         flush_logs(&app, &take_logs(&logger));
@@ -294,6 +334,7 @@ async fn bypass_run(mode: String, app: AppHandle, state: State<'_, AppState>) ->
     let l = logger.clone();
     let gw = config.gateway.clone();
     let iface = config.interface_name.clone();
+    let svc = config.service_name.clone();
     let subnets = dns_result.subnets.clone();
     spawn_blocking(move || {
         let cb = log_cb!(l);
@@ -304,6 +345,16 @@ async fn bypass_run(mode: String, app: AppHandle, state: State<'_, AppState>) ->
                 for subnet in &subnets { cb(&format!("    [+] {}/24 -> {} ✓", subnet, gw)); }
             }
             Err(e) => cb(&format!("    HATA: Route'lar eklenemedi: {}", e)),
+        }
+        // macOS: networksetup ile unscoped route'lar ekle (VPN bypass)
+        #[cfg(target_os = "macos")]
+        {
+            if let Err(e) = PlatformNetwork::exec_routes_networksetup(DNS_SERVERS, &subnets, &gw, &svc, &cb) {
+                cb(&format!("    HATA: networksetup: {}", e));
+            }
+            if let Err(e) = PlatformNetwork::add_pf_bypass(DNS_SERVERS, &subnets, &gw, &iface, &cb) {
+                cb(&format!("    UYARI: PF kuralları eklenemedi: {}", e));
+            }
         }
     }).await.unwrap_or(());
     flush_logs(&app, &take_logs(&logger));
@@ -371,7 +422,7 @@ async fn toggle_domain_route(domain: String, enable: bool, app: AppHandle) -> Re
         let commands = if enable {
             build_add_route_commands(&subnets, &[], &gw, &iface)
         } else {
-            build_remove_route_commands(&subnets, &[])
+            build_remove_route_commands(&subnets, &[], &iface)
         };
         match PlatformNetwork::exec_routes_elevated(&commands, &cb) {
             Ok(()) => {
@@ -381,6 +432,16 @@ async fn toggle_domain_route(domain: String, enable: bool, app: AppHandle) -> Re
                 }
             }
             Err(e) => cb(&format!("    HATA: {}", e)),
+        }
+        // PF kurallarını güncelle (tüm aktif domain'ler için yeniden oluştur)
+        #[cfg(target_os = "macos")]
+        {
+            if enable {
+                let _ = PlatformNetwork::add_pf_bypass(&[], &subnets, &gw, &iface, &cb);
+            } else {
+                // Domain kaldırıldığında PF'i tam olarak yeniden oluşturmak gerekir
+                // Basitlik için: tekil toggle'da PF güncellenmez, ana ON/OFF ile güncellenir
+            }
         }
     }).await.unwrap_or(());
     flush_logs(&app, &take_logs(&log2));
@@ -398,12 +459,12 @@ fn main() {
         .manage(AppState {
             active: Mutex::new(false),
         })
-        .invoke_handler(tauri::generate_handler![bypass_run, get_domains, save_domains, toggle_domain_route])
+        .invoke_handler(tauri::generate_handler![bypass_run, get_domains, save_domains, toggle_domain_route, ensure_admin])
         .setup(|app| {
             let quit = MenuItemBuilder::with_id("quit", "Çıkış").build(app)?;
             let show = MenuItemBuilder::with_id("show", "Göster").build(app)?;
             let bypass_on = MenuItemBuilder::with_id("bypass_on", "Aç").build(app)?;
-            let bypass_off = MenuItemBuilder::with_id("bypass_off", "Kapa").build(app)?;
+            let bypass_off = MenuItemBuilder::with_id("bypass_off", "Kapat").build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .item(&show)
@@ -421,7 +482,11 @@ fn main() {
                 .tooltip("RouteShift")
                 .on_menu_event(move |app, event| {
                     match event.id().as_ref() {
-                        "quit" => app.exit(0),
+                        "quit" => {
+                            #[cfg(target_os = "macos")]
+                            PlatformNetwork::stop_elevated_session();
+                            app.exit(0);
+                        }
                         "show" => {
                             if let Some(w) = app.get_webview_window("main") {
                                 let _ = w.show();

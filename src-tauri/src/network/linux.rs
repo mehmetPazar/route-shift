@@ -1,7 +1,13 @@
 use super::{NetworkConfig, NetworkOps};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct PlatformNetwork;
+
+// ==================== ELEVATION (tek seferlik sudoers kurulumu) ====================
+
+/// Sudoers kurulumu yapıldı mı? (sudo -n ip route şifresiz çalışıyor mu)
+static AUTHED: AtomicBool = AtomicBool::new(false);
 
 impl PlatformNetwork {
     fn exec(cmd: &str, args: &[&str]) -> Result<String, String> {
@@ -75,26 +81,6 @@ impl PlatformNetwork {
         None
     }
 
-    /// Wi-Fi IP adresini bul
-    fn find_wifi_ip(interface: &str) -> Option<String> {
-        let output = Self::exec("ip", &["-4", "addr", "show", interface]).ok()?;
-
-        for line in output.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("inet ") {
-                // "inet 192.168.1.100/24 brd ..." formatında
-                let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                if parts.len() > 1 {
-                    let ip_cidr = parts[1];
-                    let ip = ip_cidr.split('/').next()?;
-                    return Some(ip.to_string());
-                }
-            }
-        }
-
-        None
-    }
-
     /// Default gateway'i bul
     fn find_gateway() -> Option<String> {
         let output = Self::exec("ip", &["route", "show", "default"]).ok()?;
@@ -112,114 +98,140 @@ impl PlatformNetwork {
         None
     }
 
-    /// VPN interface tespiti (tun*, tap*, wg*)
-    fn find_vpn_ip() -> Option<String> {
-        let output = Self::exec("ip", &["-4", "addr", "show"]).ok()?;
-
-        let mut current_iface = String::new();
-        for line in output.lines() {
-            // Interface başlığı: "3: tun0: <...>"
-            if !line.starts_with(' ') {
-                let parts: Vec<&str> = line.split(':').collect();
-                if parts.len() > 1 {
-                    current_iface = parts[1].trim().to_string();
-                }
-            }
-
-            if current_iface.starts_with("tun")
-                || current_iface.starts_with("tap")
-                || current_iface.starts_with("wg")
-                || current_iface.starts_with("ppp")
-                || current_iface.starts_with("ipsec")
-            {
-                let trimmed = line.trim();
-                if trimmed.starts_with("inet ") {
-                    let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                    if parts.len() > 1 {
-                        let ip = parts[1].split('/').next()?;
-                        return Some(ip.to_string());
-                    }
-                }
-            }
-        }
-
-        None
-    }
 }
 
 impl PlatformNetwork {
-    /// Birden fazla route komutunu toplu çalıştır (Linux'ta pkexec ile admin)
+    /// Uygulama açılışında bir kez çağrılır.
+    /// /etc/sudoers.d/routeshift dosyasını kontrol eder / oluşturur.
+    /// Kullanıcı yalnızca ilk kurulumda şifre penceresi görür (pkexec).
+    /// Returns Ok(true) = zaten yetkili, Ok(false) = yeni kuruldu.
+    pub fn ensure_admin() -> Result<bool, String> {
+        // Test: sudo -n ip route show çalışıyor mu?
+        let test_ok = Command::new("sudo")
+            .args(["-n", "ip", "route", "show"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        // Sudoers dosyası MUTLAKA var olmalı (geçici sudo ticket'a güvenme)
+        let sudoers_exists = std::path::Path::new("/etc/sudoers.d/routeshift").exists();
+        if test_ok && sudoers_exists {
+            AUTHED.store(true, Ordering::Relaxed);
+            return Ok(true);
+        }
+
+        // pkexec ile sudoers dosyası oluştur (tek seferlik)
+        let user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+        let sudoers_line = format!(
+            "{} ALL=(root) NOPASSWD: /usr/sbin/ip, /sbin/ip",
+            user
+        );
+        let shell_cmd = format!(
+            "echo '{}' > /etc/sudoers.d/routeshift && chown root:root /etc/sudoers.d/routeshift && chmod 0440 /etc/sudoers.d/routeshift && visudo -c -f /etc/sudoers.d/routeshift 2>&1 || (rm -f /etc/sudoers.d/routeshift && exit 1)",
+            sudoers_line
+        );
+
+        let output = Command::new("pkexec")
+            .args(["sh", "-c", &shell_cmd])
+            .output()
+            .map_err(|e| format!("pkexec çalıştırılamadı: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Sudoers kurulumu başarısız: {}", stderr.trim()));
+        }
+
+        // Doğrula
+        let verify = Command::new("sudo")
+            .args(["-n", "ip", "route", "show"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        if verify {
+            AUTHED.store(true, Ordering::Relaxed);
+            Ok(false)
+        } else {
+            Err("Sudoers kuruldu ama doğrulama başarısız".to_string())
+        }
+    }
+
+    /// Route komutlarını yükseltilmiş yetkiyle çalıştır.
+    /// ensure_admin() başarılıysa sudo -n ile şifresiz çalışır.
+    /// Değilse pkexec fallback kullanır (her seferinde şifre sorar).
     pub fn exec_routes_elevated(commands: &[String], on_log: &dyn Fn(&str)) -> Result<(), String> {
         if commands.is_empty() {
             return Ok(());
         }
 
-        on_log("    Yönetici izni isteniyor...");
+        // Her komutu (cmd ; true) ile sar — delete hatası batch'i durdurmasın
+        let safe_commands: Vec<String> = commands
+            .iter()
+            .map(|cmd| format!("( {} ; true )", cmd))
+            .collect();
+        let batch = safe_commands.join(" ; ");
 
-        let batch = commands.join(" ; ");
+        // Birincil yol: sudo -n (sudoers kuruluysa şifre sormaz)
+        if AUTHED.load(Ordering::Relaxed) {
+            let output = Command::new("sudo")
+                .args(["-n", "sh", "-c", &batch])
+                .output()
+                .map_err(|e| format!("sudo çalıştırılamadı: {}", e))?;
+
+            Self::log_output(&String::from_utf8_lossy(&output.stdout), on_log);
+            Self::log_output(&String::from_utf8_lossy(&output.stderr), on_log);
+            return Ok(());
+        }
+
+        // Fallback: pkexec (ensure_admin çağrılmadıysa veya başarısız olduysa)
+        on_log("    Yönetici izni isteniyor...");
         let output = Command::new("pkexec")
             .args(["sh", "-c", &batch])
             .output()
             .map_err(|e| format!("pkexec çalıştırılamadı: {}", e))?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        for text in [&stdout, &stderr] {
-            for line in text.lines() {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() && !trimmed.contains("No such process") && !trimmed.contains("not found") {
-                    on_log(&format!("    {}", trimmed));
-                }
-            }
-        }
-
         if output.status.success() {
+            Self::log_output(&String::from_utf8_lossy(&output.stdout), on_log);
             Ok(())
         } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
             Err(format!("Yetki hatası: {}", stderr.trim()))
         }
     }
+
+    fn log_output(output: &str, on_log: &dyn Fn(&str)) {
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty()
+                && !trimmed.contains("No such process")
+                && !trimmed.contains("not found")
+            {
+                on_log(&format!("    {}", trimmed));
+            }
+        }
+    }
+
 }
 
 impl NetworkOps for PlatformNetwork {
     fn detect_network_config(on_log: &dyn Fn(&str)) -> Result<NetworkConfig, String> {
-        // Faz 1 (paralel): Wi-Fi interface + VPN IP + Gateway (hepsi bağımsız)
-        let (wifi_result, vpn_ip, gateway_result) = std::thread::scope(|s| {
+        let (wifi_result, gateway_result) = std::thread::scope(|s| {
             let h1 = s.spawn(|| Self::find_wifi_interface());
-            let h2 = s.spawn(|| Self::find_vpn_ip());
-            let h3 = s.spawn(|| Self::find_gateway());
-            (h1.join().unwrap(), h2.join().unwrap(), h3.join().unwrap())
+            let h2 = s.spawn(|| Self::find_gateway());
+            (h1.join().unwrap(), h2.join().unwrap())
         });
 
         let interface = wifi_result
             .ok_or("Wi-Fi arayüzü bulunamadı! Wi-Fi bağlı mı?")?;
         on_log(&format!("    Wi-Fi   : {}", interface));
 
-        // Faz 2: Wi-Fi IP (interface'e bağlı)
-        let wifi_ip = Self::find_wifi_ip(&interface)
-            .ok_or("Wi-Fi IP adresi alınamadı")?;
-        on_log(&format!("    IP      : {}", wifi_ip));
-
-        let gateway = gateway_result.unwrap_or_else(|| {
-            // Fallback: IP'den tahmin
-            let parts: Vec<&str> = wifi_ip.split('.').collect();
-            if parts.len() == 4 {
-                format!("{}.{}.{}.1", parts[0], parts[1], parts[2])
-            } else {
-                "192.168.1.1".to_string()
-            }
-        });
+        let gateway = gateway_result.unwrap_or_else(|| "192.168.1.1".to_string());
         on_log(&format!("    Gateway : {}", gateway));
 
-        if let Some(ref vip) = vpn_ip {
-            on_log(&format!("    VPN     : {}", vip));
-        }
-
         Ok(NetworkConfig {
-            wifi_ip,
-            vpn_ip,
             gateway,
-            interface_name: interface,
+            interface_name: interface.clone(),
+            service_name: interface,
         })
     }
 

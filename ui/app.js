@@ -9,6 +9,16 @@ let active = false;
 let running = false;
 let domainData = []; // [{ domain, source, enabled }]
 
+const MAX_LOG_ENTRIES = 500;
+
+// ==================== SVG ICONS ====================
+
+const ICONS = {
+  eyeOn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>'
+};
+
 // ==================== YARDIMCI FONKSIYONLAR ====================
 
 function ts() {
@@ -18,17 +28,34 @@ function ts() {
     .join(':');
 }
 
-function esc(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 function log(msg, cls) {
   const el = document.getElementById('log');
-  const span = document.createElement('span');
-  span.className = cls || '';
-  span.innerHTML = '[' + ts() + '] ' + esc(msg) + '\n';
-  el.appendChild(span);
+  const entry = document.createElement('div');
+  entry.className = 'log-entry' + (cls ? ' log-' + cls : '');
+
+  const time = document.createElement('span');
+  time.className = 'log-time';
+  time.textContent = ts();
+  entry.appendChild(time);
+
+  const dot = document.createElement('span');
+  dot.className = 'log-dot';
+  entry.appendChild(dot);
+
+  const message = document.createElement('span');
+  message.className = 'log-msg';
+  message.textContent = msg;
+  entry.appendChild(message);
+
+  el.appendChild(entry);
   el.scrollTop = el.scrollHeight;
+
+  // Prune old entries
+  while (el.children.length > MAX_LOG_ENTRIES) {
+    el.removeChild(el.firstChild);
+  }
+
+  updateLogCount();
 }
 
 function logAuto(line) {
@@ -46,6 +73,11 @@ function logAuto(line) {
   }
 }
 
+function updateLogCount() {
+  const count = document.getElementById('log').children.length;
+  document.getElementById('logCount').textContent = count;
+}
+
 // ==================== TAB YONETIMI ====================
 
 function switchTab(tabName) {
@@ -59,13 +91,19 @@ function switchTab(tabName) {
 // ==================== DURUM YONETIMI ====================
 
 function setStatus(state) {
-  document.getElementById('dot').className = 'dot ' + state;
+  const dot = document.getElementById('dot');
+  dot.className = 'dot ' + state;
 
-  const header = document.getElementById('header');
+  const statusBadge = document.getElementById('headerStatus');
+  statusBadge.className = 'header-status ' + state;
+
+  const label = document.getElementById('statusLabel');
   if (state === 'active') {
-    header.classList.add('active');
+    label.textContent = 'Aktif';
+  } else if (state === 'loading') {
+    label.textContent = 'İşlem Yapılıyor';
   } else {
-    header.classList.remove('active');
+    label.textContent = 'Devre Dışı';
   }
 
   active = (state === 'active');
@@ -80,14 +118,10 @@ function updateButtons() {
 
 // ==================== KOMUT CALISTIRMA ====================
 
-const MODE_LABELS = { add: 'ADD', remove: 'REMOVE', test: 'TEST', status: 'STATUS' };
-
 async function run(mode) {
   if (running) return;
   running = true;
   setStatus('loading');
-  const label = MODE_LABELS[mode || 'add'] || mode;
-  log(label + ' başlatılıyor...', 'info');
   updateButtons();
 
   try {
@@ -145,29 +179,50 @@ function renderDomains() {
   const container = document.getElementById('domainList');
   container.innerHTML = '';
 
-  domainData.forEach((item, index) => {
+  if (domainData.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'domain-empty';
+    empty.textContent = 'Henüz domain eklenmemiş.';
+    container.appendChild(empty);
+    return;
+  }
+
+  domainData.forEach((item) => {
     const row = document.createElement('div');
     row.className = 'domain-item';
     if (item.source === 'custom') row.classList.add('custom');
     if (!item.enabled) row.classList.add('disabled');
 
-    const idx = document.createElement('span');
-    idx.className = 'domain-index';
-    idx.textContent = (index + 1).toString();
-    row.appendChild(idx);
+    // Status dot
+    const statusDot = document.createElement('span');
+    statusDot.className = 'domain-status-dot';
+    row.appendChild(statusDot);
 
+    // Domain name
     const name = document.createElement('span');
     name.className = 'domain-name';
     name.textContent = item.domain;
     row.appendChild(name);
 
+    // Source badge
+    const badge = document.createElement('span');
+    badge.className = 'domain-badge';
+    if (item.source === 'custom') {
+      badge.classList.add('custom');
+      badge.textContent = 'özel';
+    } else {
+      badge.textContent = 'varsayılan';
+    }
+    row.appendChild(badge);
+
+    // Actions
     const actions = document.createElement('span');
     actions.className = 'domain-actions';
 
     const toggleBtn = document.createElement('button');
     toggleBtn.className = 'domain-toggle';
     toggleBtn.title = item.enabled ? 'Devre dışı bırak' : 'Etkinleştir';
-    toggleBtn.textContent = item.enabled ? '\u25CF' : '\u25CB';
+    toggleBtn.innerHTML = item.enabled ? ICONS.eyeOn : ICONS.eyeOff;
     toggleBtn.addEventListener('click', () => toggleDomain(item.domain, item.source));
     actions.appendChild(toggleBtn);
 
@@ -175,7 +230,7 @@ function renderDomains() {
       const delBtn = document.createElement('button');
       delBtn.className = 'domain-remove';
       delBtn.title = 'Sil';
-      delBtn.textContent = '\u00D7';
+      delBtn.innerHTML = ICONS.trash;
       delBtn.addEventListener('click', () => removeDomain(item.domain));
       actions.appendChild(delBtn);
     }
@@ -245,6 +300,22 @@ async function toggleDomain(domain, source) {
   }
 }
 
+// ==================== YONETICI IZNI ====================
+
+async function ensureAdmin() {
+  try {
+    const alreadyAuthorized = await invoke('ensure_admin');
+    if (alreadyAuthorized) {
+      log('Yönetici izni mevcut.', 'muted');
+    } else {
+      log('Yönetici izni alındı.', 'success');
+    }
+  } catch (err) {
+    log('Yönetici izni alınamadı: ' + (err.message || err), 'error');
+    log('Her işlemde şifre sorulabilir.', 'warn');
+  }
+}
+
 // ==================== BASLATMA ====================
 
 function init() {
@@ -254,6 +325,7 @@ function init() {
   document.getElementById('btnTest').addEventListener('click', () => run('test'));
   document.getElementById('btnClear').addEventListener('click', () => {
     document.getElementById('log').innerHTML = '';
+    updateLogCount();
   });
 
   // Tab degistirme
@@ -278,8 +350,7 @@ function init() {
 
   // Baslangic
   log('RouteShift v2.0 hazır.', 'info');
-  log('Aç butonuna tıklayın.', 'muted');
-
+  ensureAdmin();
   loadDomains();
   setStatus('inactive');
 }
