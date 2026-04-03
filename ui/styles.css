@@ -109,7 +109,75 @@ button:focus:not(:focus-visible) {
   background: var(--text-tertiary);
 }
 
-/* ==================== 4. HEADER ==================== */
+/* ==================== 4. CUSTOM TITLEBAR ==================== */
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+
+.titlebar-drag-region {
+  flex: 1;
+  height: 100%;
+}
+
+.titlebar-controls {
+  display: flex;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn {
+  width: 46px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.1s ease;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn svg {
+  width: 10px;
+  height: 10px;
+}
+
+.titlebar-btn:hover {
+  background: var(--bg-tertiary);
+}
+
+.titlebar-btn:active {
+  background: var(--border-muted);
+}
+
+.titlebar-btn-close:hover {
+  background: var(--accent-danger);
+  color: #fff;
+}
+
+.titlebar-btn-close:active {
+  background: var(--accent-danger-hover);
+  color: #fff;
+}
+
+/* macOS: hide custom controls, add padding for traffic lights */
+.titlebar.macos .titlebar-controls {
+  display: none;
+}
+
+.titlebar.macos .titlebar-drag-region {
+  padding-left: 70px;
+}
+
+/* ==================== 5. HEADER ==================== */
 
 .header {
   background: var(--bg-secondary);
@@ -132,8 +200,8 @@ button:focus:not(:focus-visible) {
 .header-logo {
   width: 22px;
   height: 22px;
-  color: var(--text-secondary);
   flex-shrink: 0;
+  border-radius: var(--radius-sm);
 }
 
 .header-title {

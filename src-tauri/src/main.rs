@@ -291,6 +291,7 @@ async fn bypass_run(mode: String, app: AppHandle, state: State<'_, AppState>) ->
 
         let logger = make_logger();
         let l = logger.clone();
+        #[cfg(target_os = "macos")]
         let svc_rm = config.service_name.clone();
         let iface_rm = config.interface_name.clone();
         let subnets = dns_result.subnets.clone();
@@ -334,6 +335,7 @@ async fn bypass_run(mode: String, app: AppHandle, state: State<'_, AppState>) ->
     let l = logger.clone();
     let gw = config.gateway.clone();
     let iface = config.interface_name.clone();
+    #[cfg(target_os = "macos")]
     let svc = config.service_name.clone();
     let subnets = dns_result.subnets.clone();
     spawn_blocking(move || {
@@ -499,6 +501,16 @@ fn main() {
                     }
                 })
                 .build(app)?;
+
+            // macOS: native traffic lights ile overlay titlebar
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::TitleBarStyle;
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.set_decorations(true);
+                    let _ = w.set_title_bar_style(TitleBarStyle::Overlay);
+                }
+            }
 
             Ok(())
         })

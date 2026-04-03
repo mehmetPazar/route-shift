@@ -316,9 +316,40 @@ async function ensureAdmin() {
   }
 }
 
+// ==================== TITLEBAR ====================
+
+const MAXIMIZE_ICON = '<svg viewBox="0 0 10 10" fill="none"><rect x="1" y="1" width="8" height="8" stroke="currentColor" stroke-width="1" fill="none"/></svg>';
+const RESTORE_ICON = '<svg viewBox="0 0 10 10" fill="none"><rect x="2.5" y="0.5" width="7" height="7" stroke="currentColor" stroke-width="1" fill="none"/><rect x="0.5" y="2.5" width="7" height="7" stroke="currentColor" stroke-width="1" fill="var(--bg-secondary)"/></svg>';
+
+function setupTitlebar() {
+  const appWindow = window.__TAURI__.window.getCurrentWindow();
+  const isMac = navigator.userAgent.includes('Macintosh');
+  const titlebar = document.getElementById('titlebar');
+
+  if (isMac) {
+    titlebar.classList.add('macos');
+    return;
+  }
+
+  document.getElementById('titlebarMin').addEventListener('click', () => appWindow.minimize());
+  document.getElementById('titlebarMax').addEventListener('click', () => appWindow.toggleMaximize());
+  document.getElementById('titlebarClose').addEventListener('click', () => appWindow.hide());
+
+  const maxBtn = document.getElementById('titlebarMax');
+  async function updateMaxIcon() {
+    const maximized = await appWindow.isMaximized();
+    maxBtn.innerHTML = maximized ? RESTORE_ICON : MAXIMIZE_ICON;
+    maxBtn.title = maximized ? 'Geri Yükle' : 'Büyült';
+  }
+  appWindow.onResized(updateMaxIcon);
+  updateMaxIcon();
+}
+
 // ==================== BASLATMA ====================
 
 function init() {
+  setupTitlebar();
+
   // Butonlar
   document.getElementById('btnOn').addEventListener('click', () => run(''));
   document.getElementById('btnOff').addEventListener('click', () => run('remove'));

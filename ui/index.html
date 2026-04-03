@@ -9,15 +9,27 @@
 </head>
 <body>
 
+  <!-- Custom Titlebar -->
+  <div class="titlebar" id="titlebar">
+    <div class="titlebar-drag-region"></div>
+    <div class="titlebar-controls">
+      <button class="titlebar-btn" id="titlebarMin" title="Küçült">
+        <svg viewBox="0 0 10 10" fill="none"><path d="M1 5h8" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button class="titlebar-btn" id="titlebarMax" title="Büyült">
+        <svg viewBox="0 0 10 10" fill="none"><rect x="1" y="1" width="8" height="8" stroke="currentColor" stroke-width="1" fill="none"/></svg>
+      </button>
+      <button class="titlebar-btn titlebar-btn-close" id="titlebarClose" title="Kapat">
+        <svg viewBox="0 0 10 10" fill="none"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+    </div>
+  </div>
+
   <!-- Header -->
   <div class="header" id="header">
     <div class="header-row">
       <div class="header-left">
-        <svg class="header-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-          <path d="M2 17l10 5 10-5"/>
-          <path d="M2 12l10 5 10-5"/>
-        </svg>
+        <img class="header-logo" src="icon.png" alt="" draggable="false">
         <span class="header-title">RouteShift</span>
       </div>
       <div class="header-status" id="headerStatus">

@@ -16,7 +16,7 @@
         "minWidth": 400,
         "minHeight": 600,
         "resizable": true,
-        "decorations": true,
+        "decorations": false,
         "center": true
       }
     ],
@@ -36,11 +36,7 @@
     ],
     "windows": {
       "nsis": {
-        "installerIcon": "icons/icon.ico",
-        "headerImage": "icons/icon.ico"
-      },
-      "wix": {
-        "dialogImagePath": "icons/icon.ico"
+        "installerIcon": "icons/icon.ico"
       }
     }
   }
