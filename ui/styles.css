@@ -168,14 +168,6 @@ button:focus:not(:focus-visible) {
   color: #fff;
 }
 
-/* macOS: hide custom controls, add padding for traffic lights */
-.titlebar.macos .titlebar-controls {
-  display: none;
-}
-
-.titlebar.macos .titlebar-drag-region {
-  padding-left: 70px;
-}
 
 /* ==================== 5. HEADER ==================== */
 

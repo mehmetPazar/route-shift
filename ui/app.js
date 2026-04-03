@@ -323,13 +323,6 @@ const RESTORE_ICON = '<svg viewBox="0 0 10 10" fill="none"><rect x="2.5" y="0.5"
 
 function setupTitlebar() {
   const appWindow = window.__TAURI__.window.getCurrentWindow();
-  const isMac = navigator.userAgent.includes('Macintosh');
-  const titlebar = document.getElementById('titlebar');
-
-  if (isMac) {
-    titlebar.classList.add('macos');
-    return;
-  }
 
   document.getElementById('titlebarMin').addEventListener('click', () => appWindow.minimize());
   document.getElementById('titlebarMax').addEventListener('click', () => appWindow.toggleMaximize());

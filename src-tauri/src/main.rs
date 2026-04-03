@@ -502,16 +502,6 @@ fn main() {
                 })
                 .build(app)?;
 
-            // macOS: native traffic lights ile overlay titlebar
-            #[cfg(target_os = "macos")]
-            {
-                use tauri::TitleBarStyle;
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.set_decorations(true);
-                    let _ = w.set_title_bar_style(TitleBarStyle::Overlay);
-                }
-            }
-
             Ok(())
         })
         .on_window_event(|window, event| {
