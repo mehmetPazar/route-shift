@@ -6,8 +6,18 @@ mod domains;
 mod network;
 mod tls_verify;
 
+// New three-layer architecture scaffolding (see docs: plans/zany-wandering-parrot.md).
+// These modules are empty stubs at Step 1 and do not affect runtime behavior yet.
+// Subsequent steps fill them in while keeping the app working throughout.
+#[allow(dead_code)]
+mod engine;
+#[allow(dead_code)]
+mod state;
+#[allow(dead_code)]
+mod lifecycle;
+
 use domains::{DomainsConfig, DomainInfo};
-use network::{NetworkConfig, NetworkOps, PlatformNetwork, DNS_SERVERS};
+use network::{NetworkOps, PlatformNetwork};
 use std::sync::Mutex;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
@@ -199,6 +209,29 @@ async fn bypass_run(mode: String, app: AppHandle, state: State<'_, AppState>) ->
     };
     emit_log(&app, &format!("{} başlatılıyor...", mode_label));
 
+    // ======================================================================
+    // ADD and REMOVE modes now go exclusively through the new three-layer
+    // orchestrator (lifecycle::*). The legacy inline Aç/Kapa implementation
+    // was removed in Step 10. TEST and STATUS still use the legacy helpers
+    // below — they don't mutate state and are simple enough that porting
+    // them would add complexity without payoff.
+    // ======================================================================
+    if mode == "add" || mode.is_empty() {
+        let active_domains = domains::get_active_domains();
+        let result = lifecycle::run_add(app.clone(), active_domains).await;
+        if result.is_ok() {
+            *state.active.lock().unwrap() = true;
+        }
+        return result;
+    }
+    if mode == "remove" {
+        let result = lifecycle::run_remove(app.clone()).await;
+        if result.is_ok() {
+            *state.active.lock().unwrap() = false;
+        }
+        return result;
+    }
+
     // STATUS modu — basit, paralel gerektirmez
     if mode == "status" {
         let logger = make_logger();
@@ -242,141 +275,13 @@ async fn bypass_run(mode: String, app: AppHandle, state: State<'_, AppState>) ->
         return Ok(());
     }
 
-    // ==================== ADD + REMOVE modları ====================
-    // İlk 3 adımı PARALEL çalıştır: proxy check ∥ network detect ∥ DNS resolve
-    let active_domains = domains::get_active_domains();
-
-    emit_log(&app, "\n  [1/4] Ağ tespit + DNS çözümleme (paralel)...\n");
-
-    // tokio::join! ile 3 bağımsız işlem aynı anda
-    let proxy_logger = make_logger();
-    let detect_logger = make_logger();
-    let pl = proxy_logger.clone();
-    let dl = detect_logger.clone();
-
-    let (_proxy_result, detect_result, dns_result) = tokio::join!(
-        // Proxy check (spawn_blocking)
-        async {
-            spawn_blocking(move || {
-                PlatformNetwork::ensure_proxy_disabled(&log_cb!(pl));
-            }).await.unwrap_or(());
-        },
-        // Network detect (spawn_blocking)
-        async {
-            spawn_blocking(move || {
-                PlatformNetwork::detect_network_config(&log_cb!(dl))
-            }).await.unwrap_or_else(|e| Err(format!("Thread hatası: {}", e)))
-        },
-        // DNS resolve (async — tüm domainler paralel)
-        dns::resolve_domains(&active_domains),
+    // Any other unknown mode — no-op to stay future-compatible.
+    let _ = state;
+    emit_log(&app, &format!("  Bilinmeyen mod: {}", mode));
+    let _ = app.emit(
+        "run-done",
+        serde_json::json!({ "success": false, "mode": mode, "error": "unknown mode" }),
     );
-
-    // Logları sıralı flush: proxy → detect → DNS
-    flush_logs(&app, &take_logs(&proxy_logger));
-    flush_logs(&app, &take_logs(&detect_logger));
-    flush_logs(&app, &dns_result.logs);
-
-    let config: NetworkConfig = match detect_result {
-        Ok(c) => c,
-        Err(e) => {
-            emit_log(&app, &format!("HATA: {}", e));
-            let _ = app.emit("run-done", serde_json::json!({ "success": false, "mode": mode, "error": e }));
-            return Err(e);
-        }
-    };
-
-    // REMOVE modu
-    if mode == "remove" {
-        emit_log(&app, "\n  Route'lar kaldırılıyor...\n");
-
-        let logger = make_logger();
-        let l = logger.clone();
-        #[cfg(target_os = "macos")]
-        let svc_rm = config.service_name.clone();
-        let iface_rm = config.interface_name.clone();
-        let subnets = dns_result.subnets.clone();
-        spawn_blocking(move || {
-            let cb = log_cb!(l);
-            let commands = build_remove_route_commands(&subnets, DNS_SERVERS, &iface_rm);
-            match PlatformNetwork::exec_routes_elevated(&commands, &cb) {
-                Ok(()) => {
-                    for dns_ip in DNS_SERVERS { cb(&format!("    [-] DNS  {} ✓", dns_ip)); }
-                    for subnet in &subnets { cb(&format!("    [-] {}/24 ✓", subnet)); }
-                }
-                Err(e) => cb(&format!("    HATA: Route'lar silinemedi: {}", e)),
-            }
-            // macOS: networksetup route'larını + PF kurallarını kaldır
-            #[cfg(target_os = "macos")]
-            {
-                PlatformNetwork::clear_routes_networksetup(&svc_rm, &cb);
-                PlatformNetwork::remove_pf_bypass(&cb);
-            }
-        }).await.unwrap_or(());
-        flush_logs(&app, &take_logs(&logger));
-
-        emit_log(&app, "\n  ✓ Tüm bypass route'ları kaldırıldı. Trafik VPN üzerinden.");
-        *state.active.lock().unwrap() = false;
-        let _ = app.emit("run-done", serde_json::json!({ "success": true, "mode": "remove" }));
-        return Ok(());
-    }
-
-    // === ADD modu devamı ===
-
-    if dns_result.subnets.is_empty() {
-        emit_log(&app, "\n  HATA: Hiçbir IP çözümlenemedi!");
-        let _ = app.emit("run-done", serde_json::json!({ "success": false, "mode": "add", "error": "DNS çözümleme başarısız" }));
-        return Err("DNS çözümleme başarısız".to_string());
-    }
-
-    // Route ekleme (blocking, toplu admin yetkisi)
-    emit_log(&app, "\n  [3/4] Route ekleniyor...\n");
-
-    let logger = make_logger();
-    let l = logger.clone();
-    let gw = config.gateway.clone();
-    let iface = config.interface_name.clone();
-    #[cfg(target_os = "macos")]
-    let svc = config.service_name.clone();
-    let subnets = dns_result.subnets.clone();
-    spawn_blocking(move || {
-        let cb = log_cb!(l);
-        let commands = build_add_route_commands(&subnets, DNS_SERVERS, &gw, &iface);
-        match PlatformNetwork::exec_routes_elevated(&commands, &cb) {
-            Ok(()) => {
-                for dns_ip in DNS_SERVERS { cb(&format!("    [+] DNS  {} -> {} (Wi-Fi) ✓", dns_ip, gw)); }
-                for subnet in &subnets { cb(&format!("    [+] {}/24 -> {} ✓", subnet, gw)); }
-            }
-            Err(e) => cb(&format!("    HATA: Route'lar eklenemedi: {}", e)),
-        }
-        // macOS: networksetup ile unscoped route'lar ekle (VPN bypass)
-        #[cfg(target_os = "macos")]
-        {
-            if let Err(e) = PlatformNetwork::exec_routes_networksetup(DNS_SERVERS, &subnets, &gw, &svc, &cb) {
-                cb(&format!("    HATA: networksetup: {}", e));
-            }
-            if let Err(e) = PlatformNetwork::add_pf_bypass(DNS_SERVERS, &subnets, &gw, &iface, &cb) {
-                cb(&format!("    UYARI: PF kuralları eklenemedi: {}", e));
-            }
-        }
-    }).await.unwrap_or(());
-    flush_logs(&app, &take_logs(&logger));
-
-    // Paralel doğrulama (4 thread aynı anda)
-    emit_log(&app, "\n  [4/4] Bağlantı doğrulanıyor (paralel)...\n");
-
-    let gw = config.gateway.clone();
-    let verify_logs = spawn_blocking(move || run_verify_parallel(&gw))
-        .await.unwrap_or_default();
-    flush_logs(&app, &verify_logs);
-
-    emit_log(&app, "\n  ════════════════════════════════════════");
-    emit_log(&app, "  Seçili domainler Wi-Fi üzerinden yönlendiriliyor.");
-    emit_log(&app, "  DNS sorgulari: Wi-Fi (8.8.8.8)");
-    emit_log(&app, "  ════════════════════════════════════════\n");
-
-    *state.active.lock().unwrap() = true;
-    let _ = app.emit("run-done", serde_json::json!({ "success": true, "mode": "add" }));
-
     Ok(())
 }
 
@@ -477,6 +382,29 @@ fn main() {
                 .item(&quit)
                 .build()?;
 
+            // ---------- Startup reconcile + signal handler ----------
+            // Runs the Layer 3 reconcile pass: cleans up orphaned state
+            // from a crashed previous session (notably the macOS
+            // networksetup additional-routes bug). Fail-soft: any error
+            // is logged and the app continues in Idle.
+            {
+                let app_handle = app.handle().clone();
+                let engine = engine::current_engine();
+                // Spawn async so setup() returns quickly. Reconcile events
+                // land in the log panel as the UI becomes interactive.
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = lifecycle::hooks::on_startup(&app_handle, engine) {
+                        tracing::warn!("startup reconcile failed: {}", e);
+                    }
+                });
+            }
+
+            // Emergency Ctrl+C / SIGTERM cleanup. Synchronous so it can run
+            // from a signal context.
+            if let Ok(state_dir) = app.path().app_data_dir() {
+                lifecycle::hooks::install_signal_handler(state_dir);
+            }
+
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().cloned().unwrap())
                 .menu(&menu)
@@ -485,9 +413,17 @@ fn main() {
                 .on_menu_event(move |app, event| {
                     match event.id().as_ref() {
                         "quit" => {
-                            #[cfg(target_os = "macos")]
-                            PlatformNetwork::stop_elevated_session();
-                            app.exit(0);
+                            // Graceful shutdown: run the full Phase 6→8
+                            // rollback via the orchestrator, then exit.
+                            // Falls back to the legacy best-effort cleanup
+                            // on macOS if the new path is not active.
+                            let app_handle = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let _ = lifecycle::hooks::on_tray_quit(app_handle.clone()).await;
+                                #[cfg(target_os = "macos")]
+                                PlatformNetwork::stop_elevated_session();
+                                app_handle.exit(0);
+                            });
                         }
                         "show" => {
                             if let Some(w) = app.get_webview_window("main") {

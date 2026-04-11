@@ -1,14 +1,38 @@
+//! macOS platform backend for RouteShift.
+//!
+//! The `PlatformNetwork` type still hosts the legacy `networksetup` /
+//! `pfctl` / `route` implementations. Step 8 adds pure-logic helpers
+//! alongside it in submodules:
+//!
+//!   - `detect` — scutil + ipconfig-based primary-interface discovery
+//!     (language-independent, no ".1" gateway fallback)
+//!
+//! Step 10 retires the legacy `PlatformNetwork` flat impl once every
+//! method has a native replacement.
+
+// Pure-logic modules — compiled on all platforms so their unit tests
+// run in normal `cargo test` from any host. Actual OS calls inside them
+// are gated by `#[cfg(target_os = "macos")]`.
+#[allow(dead_code)]
+pub mod detect;
+
+#[cfg(target_os = "macos")]
 use super::{NetworkConfig, NetworkOps};
+#[cfg(target_os = "macos")]
 use std::process::Command;
+#[cfg(target_os = "macos")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(target_os = "macos")]
 pub struct PlatformNetwork;
 
 // ==================== ELEVATION (tek seferlik sudoers kurulumu) ====================
 
 /// Sudoers kurulumu yapıldı mı? (sudo -n /sbin/route şifresiz çalışıyor mu)
+#[cfg(target_os = "macos")]
 static AUTHED: AtomicBool = AtomicBool::new(false);
 
+#[cfg(target_os = "macos")]
 impl PlatformNetwork {
     /// Uygulama açılışında bir kez çağrılır.
     /// /etc/sudoers.d/routeshift dosyasını kontrol eder / oluşturur.
@@ -396,6 +420,7 @@ impl PlatformNetwork {
 
 }
 
+#[cfg(target_os = "macos")]
 impl NetworkOps for PlatformNetwork {
     fn detect_network_config(on_log: &dyn Fn(&str)) -> Result<NetworkConfig, String> {
         let (service_name, interface) = Self::find_wifi_interface()

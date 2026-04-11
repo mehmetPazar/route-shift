@@ -1,11 +1,41 @@
+//! Windows platform backend for RouteShift.
+//!
+//! The existing `PlatformNetwork` type (below) still contains the legacy
+//! `route PRINT` parsing + `route ADD` command shell-out path. Step 6/7
+//! layers new native-API modules alongside it:
+//!
+//!   - `detect` — native Wi-Fi adapter discovery via `GetAdaptersAddresses`
+//!   - `probe`  — native rival-route detection via `GetIpForwardTable2`
+//!
+//! Step 10 retires the `PlatformNetwork` flat impl once the native path
+//! is the default for both detect and apply.
+
+// Pure-logic modules — compiled on all platforms so their unit tests
+// run in normal `cargo test` from macOS / Linux. The Win32 FFI inside
+// them is individually gated by `#[cfg(target_os = "windows")]`.
+#[allow(dead_code)]
+pub mod detect;
+#[allow(dead_code)]
+pub mod metric;
+#[allow(dead_code)]
+pub mod probe;
+#[allow(dead_code)]
+pub mod routes;
+
+#[cfg(target_os = "windows")]
 use super::{NetworkConfig, NetworkOps};
+#[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+#[cfg(target_os = "windows")]
 pub struct PlatformNetwork;
 
+#[cfg(target_os = "windows")]
 impl PlatformNetwork {
     fn exec(cmd: &str, args: &[&str]) -> Result<String, String> {
         let output = Command::new(cmd)
@@ -100,6 +130,7 @@ impl PlatformNetwork {
     }
 }
 
+#[cfg(target_os = "windows")]
 impl PlatformNetwork {
     /// Birden fazla route komutunu toplu çalıştır (Windows'ta manifest ile admin yetkisi sağlanır)
     pub fn exec_routes_elevated(commands: &[String], on_log: &dyn Fn(&str)) -> Result<(), String> {
@@ -149,6 +180,7 @@ impl PlatformNetwork {
     }
 }
 
+#[cfg(target_os = "windows")]
 impl NetworkOps for PlatformNetwork {
     fn detect_network_config(on_log: &dyn Fn(&str)) -> Result<NetworkConfig, String> {
         // Faz 1 (paralel): route PRINT + netsh show config aynı anda

@@ -1,10 +1,15 @@
 use futures::future::join_all;
 use std::collections::HashSet;
+use std::net::Ipv4Addr;
 use tokio::net::lookup_host;
 
 /// DNS çözümleme sonucu
 pub struct DnsResult {
+    /// /24 subnet stringleri, dotted-quad network adresi (eski API, uyumluluk için).
     pub subnets: Vec<String>,
+    /// Tam çözümlenen IPv4 adresleri — Phase 1 Discovery, host-specific /32
+    /// route'ları için kullanır. Coexistence stratejisinin spesifiklik kozu.
+    pub exact_ips: Vec<Ipv4Addr>,
     pub logs: Vec<String>,
 }
 
@@ -34,6 +39,7 @@ pub async fn resolve_domains(domains: &[String]) -> DnsResult {
 
     // Sonuçları topla
     let mut subnet_set: HashSet<String> = HashSet::new();
+    let mut exact_ip_set: HashSet<Ipv4Addr> = HashSet::new();
 
     for (domain, result) in results {
         match result {
@@ -44,6 +50,7 @@ pub async fn resolve_domains(domains: &[String]) -> DnsResult {
                         let octets = ipv4.octets();
                         let subnet = format!("{}.{}.{}.0", octets[0], octets[1], octets[2]);
                         subnet_set.insert(subnet);
+                        exact_ip_set.insert(ipv4);
                         logs.push(format!("    {:<30} -> {}", domain, ipv4));
                         found = true;
                     }
@@ -69,6 +76,7 @@ pub async fn resolve_domains(domains: &[String]) -> DnsResult {
 
     DnsResult {
         subnets: subnet_set.into_iter().collect(),
+        exact_ips: exact_ip_set.into_iter().collect(),
         logs,
     }
 }
